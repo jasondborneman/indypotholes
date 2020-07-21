@@ -1,4 +1,4 @@
-package main
+package indypotholes
 
 import (
 	"encoding/json"
@@ -126,7 +126,6 @@ func getStreetView(pothole Feature) []byte {
 	q.Add("pitch", "-60")
 	req.URL.RawQuery = q.Encode()
 	resp, err := client.Do(req)
-	// resp, err := http.Get("https://maps.googleapis.com/maps/api/streetview?key=AIzaSyAmbkowjq8YmYuacD7W6RG2a6n4LZQkKcg&location='5314 SHOREWOOD DR,Indianapolis,IN'&size=640x480&pitch=-60")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -180,7 +179,7 @@ func tweet(image []byte, message string) {
 	}
 }
 
-func main() {
+func IndyPotholes() {
 	potholeURL := "http://xmaps.indy.gov/arcgis/rest/services/PotholeViewer/PotholesClosed/MapServer/0/query?f=json&where=1%3D1&returnGeometry=false&spatialRel=esriSpatialRelIntersects&outFields=*&orderByFields=OPENED%20DESC"
 	resp, err := http.Get(potholeURL)
 	if err != nil {
