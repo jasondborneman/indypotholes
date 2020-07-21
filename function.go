@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"time"
@@ -134,26 +135,6 @@ func getStreetView(pothole Feature) []byte {
 	if err != nil {
 		log.Fatal(err)
 	}
-	filename := "latest.jpg"
-	imageAsString := string(imageAsByteArr)
-
-	f, err := os.Create(filename)
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-	l, err := f.WriteString(imageAsString)
-	if err != nil {
-		fmt.Println(err)
-		f.Close()
-		return nil
-	}
-	fmt.Println(l, "bytes written successfully")
-	err = f.Close()
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
 	return imageAsByteArr
 }
 
@@ -195,19 +176,17 @@ func IndyPotholes(http.ResponseWriter, *http.Request) {
 
 	var potholeCount int
 	potholeCount = len(potholes.Features)
-	var latestPothole Feature
-	// var randomPothole Feature
 
-	latestPothole = potholes.Features[0]
-	// rand.Seed(time.Now().UnixNano())
-	// min := 0
-	// max := potholeCount - 1
-	// randomPothole = potholes.Features[rand.Intn(max-min+1)+min]
-	imageBytes := getStreetView(latestPothole)
-	latestDate := time.Unix(latestPothole.Attributes.OPENED/1000, 0)
-	latestAddress := latestPothole.Attributes.INCIDENTADDRESS
+	var randomPothole Feature
+	rand.Seed(time.Now().UnixNano())
+	min := 0
+	max := potholeCount - 1
+	randomPothole = potholes.Features[rand.Intn(max-min+1)+min]
+	imageBytes := getStreetView(randomPothole)
+	randomDate := time.Unix(randomPothole.Attributes.OPENED/1000, 0)
+	randomAddress := randomPothole.Attributes.INCIDENTADDRESS
 	message := fmt.Sprintf(`Current Open Potholes: %d
-Latest Pothole entered at: %s
-Latest Pothole Address: %s`, potholeCount, latestDate, latestAddress)
+This Pothole entered at: %s
+This Pothole Address: %s`, potholeCount, randomDate, randomAddress)
 	tweet(imageBytes, message)
 }
