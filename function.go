@@ -179,7 +179,7 @@ func tweet(image []byte, message string) {
 	}
 }
 
-func IndyPotholes() {
+func IndyPotholes(http.ResponseWriter, *http.Request) {
 	potholeURL := "http://xmaps.indy.gov/arcgis/rest/services/PotholeViewer/PotholesClosed/MapServer/0/query?f=json&where=1%3D1&returnGeometry=false&spatialRel=esriSpatialRelIntersects&outFields=*&orderByFields=OPENED%20DESC"
 	resp, err := http.Get(potholeURL)
 	if err != nil {

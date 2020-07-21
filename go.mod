@@ -1,4 +1,4 @@
-module indypotholes
+module github.com/jasondborneman/indypotholes
 
 go 1.13
 
