@@ -1,6 +1,8 @@
 package indypotholes
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -10,9 +12,17 @@ import (
 	"os"
 	"time"
 
+	"cloud.google.com/go/firestore"
 	"github.com/dghubble/oauth1"
 	"github.com/jasondborneman/go-twitter/twitter"
+	"github.com/wcharczuk/go-chart"
+	"google.golang.org/api/iterator"
 )
+
+type CountData struct {
+	count int
+	date  time.Time
+}
 
 type FieldAliases struct {
 	OBJECTID        string `json:"OBJECTID"`
@@ -53,6 +63,7 @@ type FieldAliases struct {
 	SUBSTATUS       string `json:"SUBSTATUS"`
 	DATEOFTRANSFER  string `json:"DATE_OF_TRANSFER"`
 	DESCRIPTION     string `json:"DESCRIPTION"`
+	SR_NUMBER       string `json:"SR_NUMBER"`
 }
 
 type Field struct {
@@ -138,29 +149,136 @@ func getStreetView(pothole Feature) []byte {
 	return imageAsByteArr
 }
 
-func tweet(image []byte, message string) {
+func tweet(image []byte, graph []byte, message string) {
 	fmt.Println(message)
 	config := oauth1.NewConfig(os.Getenv("TWITTERCONSUMERKEY"), os.Getenv("TWITTERCONSUMERSECRET"))
 	token := oauth1.NewToken(os.Getenv("TWITTERACCESSTOKEN"), os.Getenv("TWITTERACCESSSECRET"))
 	httpClient := config.Client(oauth1.NoContext, token)
 	client := twitter.NewClient(httpClient)
 	tweetParams := &twitter.StatusUpdateParams{}
-	res, _, err := client.Media.Upload(image, "image/jpeg")
+	picRes, _, err := client.Media.Upload(image, "image/jpeg")
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	if res.MediaID > 0 {
-		tweetParams.MediaIds = []int64{res.MediaID}
+	graphRes, _, err2 := client.Media.Upload(graph, "image/png")
+	if err != nil {
+		fmt.Println(err2)
+		return
 	}
-	_, _, err2 := client.Statuses.Update(message, tweetParams)
-	if err2 != nil {
-		fmt.Println(err)
+	tweetParams.MediaIds = []int64{}
+	if picRes.MediaID > 0 {
+		tweetParams.MediaIds = append(tweetParams.MediaIds, picRes.MediaID)
+	}
+
+	if graphRes.MediaID > 0 {
+		tweetParams.MediaIds = append(tweetParams.MediaIds, graphRes.MediaID)
+	}
+	_, _, err3 := client.Statuses.Update(message, tweetParams)
+	if err3 != nil {
+		fmt.Println(err3)
 		return
 	}
 }
 
-func IndyPotholes(http.ResponseWriter, *http.Request) {
+func createClient(ctx context.Context) *firestore.Client {
+	projectID := os.Getenv("GCPPROJECT")
+
+	client, err := firestore.NewClient(ctx, projectID)
+	if err != nil {
+		fsErrMessage := fmt.Sprintf("Failed to create client: %v", err)
+		fmt.Println(fsErrMessage)
+	}
+	// Close client when done with
+	// defer client.Close()
+	return client
+}
+
+func createGraph(xVals []float64, yVals []float64) []byte {
+	graph := chart.Chart{
+		XAxis: chart.XAxis{
+			Style: chart.Style{
+				Show: true,
+			},
+			ValueFormatter: func(v interface{}) string {
+				loc, _ := time.LoadLocation("America/Indiana/Indianapolis")
+				typed := v.(float64)
+				typedDate := time.Unix(0, int64(typed)).In(loc)
+				return fmt.Sprintf("%02d/%02d/%d %02d:%02d", typedDate.Month(), typedDate.Day(), typedDate.Year(), typedDate.Hour(), typedDate.Minute())
+			},
+		},
+		YAxis: chart.YAxis{
+			Style: chart.Style{
+				Show: true,
+			},
+			GridLines: []chart.GridLine{
+				chart.GridLine{Value: 0.0},
+				chart.GridLine{Value: 200.0},
+				chart.GridLine{Value: 400.0},
+				chart.GridLine{Value: 600.0},
+				chart.GridLine{Value: 800.0},
+				chart.GridLine{Value: 1000.0},
+				chart.GridLine{Value: 1200.0},
+				chart.GridLine{Value: 1400.0},
+				chart.GridLine{Value: 1600.0},
+				chart.GridLine{Value: 1800.0},
+				chart.GridLine{Value: 2000.0},
+			},
+		},
+		Series: []chart.Series{
+			chart.ContinuousSeries{
+				XValues: xVals,
+				YValues: yVals,
+			},
+		},
+	}
+
+	graphBuffer := bytes.NewBuffer([]byte{})
+	gErr := graph.Render(chart.PNG, graphBuffer)
+	if gErr != nil {
+		fmt.Println(gErr)
+	}
+	return graphBuffer.Bytes()
+}
+
+func storeDataAndGetCountData(potholeCount int) ([]float64, []float64) {
+	ctx := context.Background()
+	dataClient := createClient(ctx)
+	loc, _ := time.LoadLocation("America/Indiana/Indianapolis")
+	_, _, fbErr := dataClient.Collection("potholeCount").Add(ctx, map[string]interface{}{
+		"dateNano": time.Now().In(loc).UnixNano(),
+		"count":    potholeCount,
+	})
+	if fbErr != nil {
+		fbErrMessage := fmt.Sprintf("Failed adding pothole data to database: %v", fbErr)
+		fmt.Println(fbErrMessage)
+	}
+
+	xVals := []float64{}
+	yVals := []float64{}
+	iter := dataClient.Collection("potholeCount").OrderBy("dateNano", firestore.Asc).StartAfter(time.Now().AddDate(0, -1, 0).UnixNano()).Documents(ctx)
+	for {
+		doc, fbReadErr := iter.Next()
+		if fbReadErr == iterator.Done {
+			break
+		}
+		if fbReadErr != nil {
+			fbReadErrMessage := fmt.Sprintf("Failed retrieving pothole count data: %v", fbReadErr)
+			fmt.Println(fbReadErrMessage)
+			break
+		} else {
+			fmt.Println(doc.Data())
+			xVals = append(xVals, float64(doc.Data()["dateNano"].(int64)))
+			theCount := float64(doc.Data()["count"].(int64))
+			fmt.Println(theCount)
+			yVals = append(yVals, theCount)
+		}
+	}
+	dataClient.Close()
+	return xVals, yVals
+}
+
+func IndyPotholes(w http.ResponseWriter, r *http.Request) {
 	potholeURL := "http://xmaps.indy.gov/arcgis/rest/services/PotholeViewer/PotholesClosed/MapServer/0/query?f=json&where=1%3D1&returnGeometry=false&spatialRel=esriSpatialRelIntersects&outFields=*&orderByFields=OPENED%20DESC"
 	resp, err := http.Get(potholeURL)
 	if err != nil {
@@ -176,6 +294,8 @@ func IndyPotholes(http.ResponseWriter, *http.Request) {
 
 	var potholeCount int
 	potholeCount = len(potholes.Features)
+	xVals, yVals := storeDataAndGetCountData(potholeCount)
+	graphImage := createGraph(xVals, yVals)
 
 	var randomPothole Feature
 	rand.Seed(time.Now().UnixNano())
@@ -185,8 +305,11 @@ func IndyPotholes(http.ResponseWriter, *http.Request) {
 	imageBytes := getStreetView(randomPothole)
 	randomDate := time.Unix(randomPothole.Attributes.OPENED/1000, 0)
 	randomAddress := randomPothole.Attributes.INCIDENTADDRESS
+	srNumber := randomPothole.Attributes.SRNUMBER
+	detailURL := "http://maps.indy.gov/RequestIndy/proxy.ashx?http%3A%2F%2Fmaps.indy.gov%2FRequestIndyServices%2FServiceRequests%2F"
 	message := fmt.Sprintf(`Current Open Potholes: %d
 This Pothole entered at: %s
-This Pothole Address: %s`, potholeCount, randomDate, randomAddress)
-	tweet(imageBytes, message)
+This Pothole Address: %s
+Detail: %s%s`, potholeCount, randomDate, randomAddress, detailURL, srNumber)
+	tweet(imageBytes, graphImage, message)
 }
