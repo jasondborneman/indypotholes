@@ -187,7 +187,9 @@ func createClient(ctx context.Context) *firestore.Client {
 	return client
 }
 
-func createGraph(xVals []float64, yVals []float64) []byte {
+func createGraph(xVals []float64, yVals []float64, maxCount int64) []byte {
+	maxMessage := fmt.Sprintf("Max Value is: %d", maxCount)
+	fmt.Println(maxMessage)
 	graph := chart.Chart{
 		XAxis: chart.XAxis{
 			Style: chart.Style{
@@ -204,18 +206,9 @@ func createGraph(xVals []float64, yVals []float64) []byte {
 			Style: chart.Style{
 				Show: true,
 			},
-			GridLines: []chart.GridLine{
-				chart.GridLine{Value: 0.0},
-				chart.GridLine{Value: 200.0},
-				chart.GridLine{Value: 400.0},
-				chart.GridLine{Value: 600.0},
-				chart.GridLine{Value: 800.0},
-				chart.GridLine{Value: 1000.0},
-				chart.GridLine{Value: 1200.0},
-				chart.GridLine{Value: 1400.0},
-				chart.GridLine{Value: 1600.0},
-				chart.GridLine{Value: 1800.0},
-				chart.GridLine{Value: 2000.0},
+			Range: &chart.ContinuousRange{
+				Min: 0.0,
+				Max: float64(maxCount),
 			},
 		},
 		Series: []chart.Series{
@@ -234,7 +227,7 @@ func createGraph(xVals []float64, yVals []float64) []byte {
 	return graphBuffer.Bytes()
 }
 
-func storeDataAndGetCountData(potholeCount int) ([]float64, []float64) {
+func storeDataAndGetCountData(potholeCount int) ([]float64, []float64, int64) {
 	ctx := context.Background()
 	dataClient := createClient(ctx)
 	loc, _ := time.LoadLocation("America/Indiana/Indianapolis")
@@ -246,6 +239,10 @@ func storeDataAndGetCountData(potholeCount int) ([]float64, []float64) {
 		fbErrMessage := fmt.Sprintf("Failed adding pothole data to database: %v", fbErr)
 		fmt.Println(fbErrMessage)
 	}
+
+	iterMax := dataClient.Collection("potholeCount").OrderBy("count", firestore.Desc).StartAfter(time.Now().AddDate(0, -1, 0).UnixNano()).Limit(1).Documents(ctx)
+	doc, _ := iterMax.Next()
+	maxCount := doc.Data()["count"].(int64)
 
 	xVals := []float64{}
 	yVals := []float64{}
@@ -260,15 +257,13 @@ func storeDataAndGetCountData(potholeCount int) ([]float64, []float64) {
 			fmt.Println(fbReadErrMessage)
 			break
 		} else {
-			fmt.Println(doc.Data())
 			xVals = append(xVals, float64(doc.Data()["dateNano"].(int64)))
 			theCount := float64(doc.Data()["count"].(int64))
-			fmt.Println(theCount)
 			yVals = append(yVals, theCount)
 		}
 	}
 	dataClient.Close()
-	return xVals, yVals
+	return xVals, yVals, maxCount
 }
 
 func IndyPotholes(w http.ResponseWriter, r *http.Request) {
@@ -287,8 +282,8 @@ func IndyPotholes(w http.ResponseWriter, r *http.Request) {
 
 	var potholeCount int
 	potholeCount = len(potholes.Features)
-	xVals, yVals := storeDataAndGetCountData(potholeCount)
-	graphImage := createGraph(xVals, yVals)
+	xVals, yVals, maxCount := storeDataAndGetCountData(potholeCount)
+	graphImage := createGraph(xVals, yVals, maxCount)
 
 	var randomPothole Feature
 	rand.Seed(time.Now().UnixNano())
