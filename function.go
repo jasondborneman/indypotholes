@@ -201,9 +201,10 @@ func createGraph(xVals []float64, yVals []float64) []byte {
 				Show: true,
 			},
 			ValueFormatter: func(v interface{}) string {
+				loc, _ := time.LoadLocation("America/Indiana/Indianapolis")
 				typed := v.(float64)
-				typedDate := time.Unix(0, int64(typed))
-				return fmt.Sprintf("%d/%d/%d %d:%d", typedDate.Month(), typedDate.Day(), typedDate.Year(), typedDate.Hour()-4, typedDate.Minute())
+				typedDate := time.Unix(0, int64(typed)).In(loc)
+				return fmt.Sprintf("%d/%d/%d %d:%d", typedDate.Month(), typedDate.Day(), typedDate.Year(), typedDate.Hour(), typedDate.Minute())
 			},
 		},
 		YAxis: chart.YAxis{
@@ -243,8 +244,9 @@ func createGraph(xVals []float64, yVals []float64) []byte {
 func storeDataAndGetCountData(potholeCount int) ([]float64, []float64) {
 	ctx := context.Background()
 	dataClient := createClient(ctx)
+	loc, _ := time.LoadLocation("America/Indiana/Indianapolis")
 	_, _, fbErr := dataClient.Collection("potholeCount").Add(ctx, map[string]interface{}{
-		"dateNano": time.Now().UnixNano(),
+		"dateNano": time.Now().In(loc).UnixNano(),
 		"count":    potholeCount,
 	})
 	if fbErr != nil {
