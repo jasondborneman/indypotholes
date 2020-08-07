@@ -204,7 +204,7 @@ func createGraph(xVals []float64, yVals []float64) []byte {
 				loc, _ := time.LoadLocation("America/Indiana/Indianapolis")
 				typed := v.(float64)
 				typedDate := time.Unix(0, int64(typed)).In(loc)
-				return fmt.Sprintf("%d/%d/%d %d:%d", typedDate.Month(), typedDate.Day(), typedDate.Year(), typedDate.Hour(), typedDate.Minute())
+				return fmt.Sprintf("%02d/%02d/%d %02d:%02d", typedDate.Month(), typedDate.Day(), typedDate.Year(), typedDate.Hour(), typedDate.Minute())
 			},
 		},
 		YAxis: chart.YAxis{
