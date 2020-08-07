@@ -19,11 +19,6 @@ import (
 	"google.golang.org/api/iterator"
 )
 
-type CountData struct {
-	count int
-	date  time.Time
-}
-
 type FieldAliases struct {
 	OBJECTID        string `json:"OBJECTID"`
 	DEPARTMENT      string `json:"DEPARTMENT"`
@@ -189,8 +184,6 @@ func createClient(ctx context.Context) *firestore.Client {
 		fsErrMessage := fmt.Sprintf("Failed to create client: %v", err)
 		fmt.Println(fsErrMessage)
 	}
-	// Close client when done with
-	// defer client.Close()
 	return client
 }
 
