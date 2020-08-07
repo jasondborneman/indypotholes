@@ -194,55 +194,7 @@ func createClient(ctx context.Context) *firestore.Client {
 	return client
 }
 
-func IndyPotholes(w http.ResponseWriter, r *http.Request) {
-	potholeURL := "http://xmaps.indy.gov/arcgis/rest/services/PotholeViewer/PotholesClosed/MapServer/0/query?f=json&where=1%3D1&returnGeometry=false&spatialRel=esriSpatialRelIntersects&outFields=*&orderByFields=OPENED%20DESC"
-	resp, err := http.Get(potholeURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-	potholesBody, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		log.Fatal(err)
-	}
-	var potholes PotholeResponse
-	json.Unmarshal([]byte(potholesBody), &potholes)
-
-	var potholeCount int
-	potholeCount = len(potholes.Features)
-	ctx := context.Background()
-	dataClient := createClient(ctx)
-	_, _, fbErr := dataClient.Collection("potholeCount").Add(ctx, map[string]interface{}{
-		"dateNano": time.Now().UnixNano(),
-		"count":    potholeCount,
-	})
-	if fbErr != nil {
-		fbErrMessage := fmt.Sprintf("Failed adding pothole data to database: %v", fbErr)
-		fmt.Println(fbErrMessage)
-	}
-
-	xVals := []float64{}
-	yVals := []float64{}
-	iter := dataClient.Collection("potholeCount").OrderBy("dateNano", firestore.Asc).StartAfter(time.Now().AddDate(0, -1, 0).UnixNano()).Documents(ctx)
-	for {
-		doc, fbReadErr := iter.Next()
-		if fbReadErr == iterator.Done {
-			break
-		}
-		if fbReadErr != nil {
-			fbReadErrMessage := fmt.Sprintf("Failed retrieving pothole count data: %v", fbReadErr)
-			fmt.Println(fbReadErrMessage)
-			break
-		} else {
-			fmt.Println(doc.Data())
-			xVals = append(xVals, float64(doc.Data()["dateNano"].(int64)))
-			theCount := float64(doc.Data()["count"].(int64))
-			fmt.Println(theCount)
-			yVals = append(yVals, theCount)
-		}
-	}
-	dataClient.Close()
-
+func createGraph(xVals []float64, yVals []float64) []byte {
 	graph := chart.Chart{
 		XAxis: chart.XAxis{
 			Style: chart.Style{
@@ -283,8 +235,65 @@ func IndyPotholes(w http.ResponseWriter, r *http.Request) {
 	graphBuffer := bytes.NewBuffer([]byte{})
 	gErr := graph.Render(chart.PNG, graphBuffer)
 	if gErr != nil {
-		fmt.Println(err)
+		fmt.Println(gErr)
 	}
+	return graphBuffer.Bytes()
+}
+
+func storeDataAndGetCountData(potholeCount int) ([]float64, []float64) {
+	ctx := context.Background()
+	dataClient := createClient(ctx)
+	_, _, fbErr := dataClient.Collection("potholeCount").Add(ctx, map[string]interface{}{
+		"dateNano": time.Now().UnixNano(),
+		"count":    potholeCount,
+	})
+	if fbErr != nil {
+		fbErrMessage := fmt.Sprintf("Failed adding pothole data to database: %v", fbErr)
+		fmt.Println(fbErrMessage)
+	}
+
+	xVals := []float64{}
+	yVals := []float64{}
+	iter := dataClient.Collection("potholeCount").OrderBy("dateNano", firestore.Asc).StartAfter(time.Now().AddDate(0, -1, 0).UnixNano()).Documents(ctx)
+	for {
+		doc, fbReadErr := iter.Next()
+		if fbReadErr == iterator.Done {
+			break
+		}
+		if fbReadErr != nil {
+			fbReadErrMessage := fmt.Sprintf("Failed retrieving pothole count data: %v", fbReadErr)
+			fmt.Println(fbReadErrMessage)
+			break
+		} else {
+			fmt.Println(doc.Data())
+			xVals = append(xVals, float64(doc.Data()["dateNano"].(int64)))
+			theCount := float64(doc.Data()["count"].(int64))
+			fmt.Println(theCount)
+			yVals = append(yVals, theCount)
+		}
+	}
+	dataClient.Close()
+	return xVals, yVals
+}
+
+func IndyPotholes(w http.ResponseWriter, r *http.Request) {
+	potholeURL := "http://xmaps.indy.gov/arcgis/rest/services/PotholeViewer/PotholesClosed/MapServer/0/query?f=json&where=1%3D1&returnGeometry=false&spatialRel=esriSpatialRelIntersects&outFields=*&orderByFields=OPENED%20DESC"
+	resp, err := http.Get(potholeURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	potholesBody, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	var potholes PotholeResponse
+	json.Unmarshal([]byte(potholesBody), &potholes)
+
+	var potholeCount int
+	potholeCount = len(potholes.Features)
+	xVals, yVals := storeDataAndGetCountData(potholeCount)
+	graphImage := createGraph(xVals, yVals)
 
 	var randomPothole Feature
 	rand.Seed(time.Now().UnixNano())
@@ -300,5 +309,5 @@ func IndyPotholes(w http.ResponseWriter, r *http.Request) {
 This Pothole entered at: %s
 This Pothole Address: %s
 Detail: %s%s`, potholeCount, randomDate, randomAddress, detailURL, srNumber)
-	tweet(imageBytes, graphBuffer.Bytes(), message)
+	tweet(imageBytes, graphImage, message)
 }
