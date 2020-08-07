@@ -246,7 +246,12 @@ func IndyPotholes(w http.ResponseWriter, r *http.Request) {
 	graph := chart.Chart{
 		XAxis: chart.XAxis{
 			Style: chart.Style{
-				Show: false,
+				Show: true,
+			},
+			ValueFormatter: func(v interface{}) string {
+				typed := v.(float64)
+				typedDate := time.Unix(0, int64(typed))
+				return fmt.Sprintf("%d/%d/%d %d:%d", typedDate.Month(), typedDate.Day(), typedDate.Year(), typedDate.Hour()-4, typedDate.Minute())
 			},
 		},
 		YAxis: chart.YAxis{
