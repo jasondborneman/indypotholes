@@ -221,9 +221,9 @@ func IndyPotholes(w http.ResponseWriter, r *http.Request) {
 		fmt.Println(fbErrMessage)
 	}
 
-	// xVals := []float64{}
+	xVals := []float64{}
 	yVals := []float64{}
-	iter := dataClient.Collection("potholeCount").OrderBy("date", firestore.Asc).StartAfter(time.Now().AddDate(0, -1, 0).UnixNano()).Documents(ctx)
+	iter := dataClient.Collection("potholeCount").OrderBy("dateNano", firestore.Asc).StartAfter(time.Now().AddDate(0, -1, 0).UnixNano()).Documents(ctx)
 	for {
 		doc, fbReadErr := iter.Next()
 		if fbReadErr == iterator.Done {
@@ -235,31 +235,46 @@ func IndyPotholes(w http.ResponseWriter, r *http.Request) {
 			break
 		} else {
 			fmt.Println(doc.Data())
-			// xVals = append(xVals, doc.Data()["dateNano"].(float64))
-			theCount := doc.Data()["count"].(float64)
+			xVals = append(xVals, float64(doc.Data()["dateNano"].(int64)))
+			theCount := float64(doc.Data()["count"].(int64))
+			fmt.Println(theCount)
 			yVals = append(yVals, theCount)
 		}
 	}
 	dataClient.Close()
 
 	graph := chart.Chart{
-		// XAxis: chart.XAxis{
-		// 	Style: chart.Style{
-		// 		Show: true,
-		// 	},
-		// 	ValueFormatter: func(v interface{}) string {
-		// 		typed := v.(float64)
-		// 		typedDate := timeutil.TimestampFromFloat64(typed)
-		// 		return fmt.Sprintf("%d/%d/%d %d:%d", typedDate.Month(), typedDate.Day(), typedDate.Year(), typedDate.Hour(), typedDate.Minute())
-		// 	},
-		// },
+		XAxis: chart.XAxis{
+			Style: chart.Style{
+				Show: false,
+			},
+		},
+		YAxis: chart.YAxis{
+			Style: chart.Style{
+				Show: true,
+			},
+			GridLines: []chart.GridLine{
+				chart.GridLine{Value: 0.0},
+				chart.GridLine{Value: 200.0},
+				chart.GridLine{Value: 400.0},
+				chart.GridLine{Value: 600.0},
+				chart.GridLine{Value: 800.0},
+				chart.GridLine{Value: 1000.0},
+				chart.GridLine{Value: 1200.0},
+				chart.GridLine{Value: 1400.0},
+				chart.GridLine{Value: 1600.0},
+				chart.GridLine{Value: 1800.0},
+				chart.GridLine{Value: 2000.0},
+			},
+		},
 		Series: []chart.Series{
 			chart.ContinuousSeries{
-				// XValues: xVals,
+				XValues: xVals,
 				YValues: yVals,
 			},
 		},
 	}
+
 	graphBuffer := bytes.NewBuffer([]byte{})
 	gErr := graph.Render(chart.PNG, graphBuffer)
 	if gErr != nil {
